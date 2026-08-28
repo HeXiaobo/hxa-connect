@@ -3750,9 +3750,16 @@ export function createRouter(db: HubDB, ws: HubWS, config: HubConfig, sessionSto
   auth.post('/api/org/tickets', async (req, res) => {
     if (!requireOrgAdmin(req, res)) return;
 
-    const { reusable, expires_in } = req.body;
+    const { reusable, expires_in, org_id: bodyOrgId } = req.body;
+    // Fork extension: super_admin sessions carry no org context, so let them
+    // target a specific org via body.org_id or ?org_id=. Non-super callers
+    // must still rely on their session/bot to avoid privilege confusion.
+    const queryOrgId = typeof req.query.org_id === 'string' ? req.query.org_id : undefined;
+    const superOrgId = req.session?.role === 'super_admin'
+      ? (bodyOrgId || queryOrgId)
+      : undefined;
 
-    const orgId = req.session?.org_id || req.bot?.org_id || req.org?.id;
+    const orgId = superOrgId || req.session?.org_id || req.bot?.org_id || req.org?.id;
     const org = orgId ? await db.getOrgById(orgId) : undefined;
     if (!org) {
       res.status(404).json({ error: 'Organization not found', code: 'NOT_FOUND' });
