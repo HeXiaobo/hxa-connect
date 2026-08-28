@@ -67,6 +67,14 @@ export const superAdmin = {
       body: JSON.stringify({ name }),
     }),
 
+  // Fork extension: super_admin mints an org ticket by passing org_id
+  // in the body. Server route /api/org/tickets accepts this for super_admin.
+  createOrgTicket: (orgId: string, params: { reusable?: boolean; expires_in?: number }) =>
+    adminRequest<{ ticket: string; expires_at: number; reusable: boolean }>('/api/org/tickets', {
+      method: 'POST',
+      body: JSON.stringify({ ...params, org_id: orgId }),
+    }),
+
   updateOrgStatus: (orgId: string, status: 'active' | 'suspended') =>
     adminRequest<Org>(`/api/orgs/${orgId}`, {
       method: 'PATCH',

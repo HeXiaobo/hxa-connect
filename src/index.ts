@@ -215,6 +215,12 @@ async function main() {
   app.get('/org/*', (_req, res) => {
     res.sendFile(path.join(webNextDir, 'org', 'index.html'));
   });
+  app.get('/invite/*', (_req, res) => {
+    res.sendFile(path.join(webNextDir, 'invite', 'index.html'));
+  });
+  app.get('/join/*', (_req, res) => {
+    res.sendFile(path.join(webNextDir, 'join', 'index.html'));
+  });
 
   app.use(createRouter(db, hubWs, config, sessionStore));
 

@@ -6,7 +6,7 @@ import {
   Shield, Building2, KeyRound, Plus, RotateCw, Eye,
   Pause, Play, Trash2, Copy, X, ArrowLeft, LogOut, Bot,
 } from 'lucide-react';
-import { superAdmin, type Org, type InviteCode, AdminApiError } from '@/lib/admin-api';
+import { superAdmin, orgAdmin, type Org, type InviteCode, AdminApiError } from '@/lib/admin-api';
 import * as api from '@/lib/api';
 import { useTranslations } from '@/i18n/context';
 
@@ -176,6 +176,8 @@ export default function AdminPage() {
   const [selectedOrg, setSelectedOrg] = useState<Org | null>(null);
   const [showCreateOrg, setShowCreateOrg] = useState(false);
   const [showCreateCode, setShowCreateCode] = useState(false);
+  const [showCreateJoinLink, setShowCreateJoinLink] = useState(false);
+  const [joinLinkOrgId, setJoinLinkOrgId] = useState<string>('');
 
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -337,6 +339,18 @@ export default function AdminPage() {
         loadData();
         setSecretModal({ title: t('admin.orgCreated.title'), subtitle: t('admin.orgCreated.subtitle', { name }), orgId, secret: orgSecret, hint: t('admin.secretHint') });
       }} />}
+      {showCreateJoinLink && (
+        <CreateJoinLinkModal
+          orgs={orgs}
+          defaultOrgId={joinLinkOrgId || (orgs[0]?.id ?? '')}
+          onClose={() => setShowCreateJoinLink(false)}
+          onCreated={(link) => {
+            setShowCreateJoinLink(false);
+            setSecretModal({ title: 'Bot Join Link', secret: link, hint: 'Send this link to the bot operator. Opening it lets them pick a name and join the organization.' });
+          }}
+        />
+      )}
+
       {showCreateCode && <CreateCodeModal onClose={() => setShowCreateCode(false)} onCreated={(code) => {
         setShowCreateCode(false);
         loadData();
@@ -388,7 +402,10 @@ export default function AdminPage() {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">{t('admin.section.organizations')}</h2>
-            <button onClick={() => setShowCreateOrg(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-hxa-accent/20 text-hxa-accent rounded-lg hover:bg-hxa-accent/30 border border-hxa-accent/30 transition-colors">
+            <button onClick={() => { setJoinLinkOrgId(''); setShowCreateJoinLink(true); }} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-hxa-accent/20 text-hxa-accent rounded-lg hover:bg-hxa-accent/30 border border-hxa-accent/30 transition-colors">
+            <Bot size={14} /> Create Join Link
+          </button>
+          <button onClick={() => setShowCreateOrg(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-hxa-accent/20 text-hxa-accent rounded-lg hover:bg-hxa-accent/30 border border-hxa-accent/30 transition-colors">
               <Plus size={14} /> {t('admin.createOrg')}
             </button>
           </div>
@@ -618,6 +635,68 @@ function CreateOrgModal({ onClose, onCreated }: {
 }
 
 // ─── Create Code Modal ───
+
+function CreateJoinLinkModal({ orgs, defaultOrgId, onClose, onCreated }: {
+  onClose: () => void; onCreated: (link: string) => void;
+  orgs: Org[]; defaultOrgId: string;
+}) {
+  const { t } = useTranslations();
+  const [orgId, setOrgId] = useState(defaultOrgId);
+  const [hours, setHours] = useState('24');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!orgId) { setError('Select an organization'); return; }
+    setLoading(true);
+    setError('');
+    try {
+      // Fork extension: super_admin can mint org tickets by passing org_id
+      // in the body (server route /api/org/tickets accepts it for super_admin).
+      const result = await superAdmin.createOrgTicket(orgId, { expires_in: parseInt(hours) * 3600 });
+      const base = typeof window !== 'undefined' ? window.location.origin : 'https://hxa.with3.ai';
+      const org = orgs.find(o => o.id === orgId);
+      const link = `${base}/join/?t=${encodeURIComponent(result.ticket)}&org_id=${encodeURIComponent(orgId)}${org ? `&name=${encodeURIComponent(org.name)}` : ''}`;
+      onCreated(link);
+    } catch (err) {
+      setError(err instanceof AdminApiError ? err.message : 'Failed to create join link');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <form onSubmit={handleSubmit} className="bg-[#0d1a2d] border border-hxa-border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2"><Bot size={18} className="text-hxa-accent" /> Create Join Link</h3>
+          <button type="button" onClick={onClose} className="text-hxa-text-dim hover:text-hxa-text"><X size={18} /></button>
+        </div>
+        <div className="flex flex-col gap-3 mb-4">
+          <div>
+            <label className="text-xs text-hxa-text-dim mb-1 block">Organization</label>
+            <select value={orgId} onChange={e => setOrgId(e.target.value)} className="w-full px-3 py-2 bg-[#0a1424] border border-hxa-border rounded-lg text-sm focus:outline-none focus:border-hxa-accent">
+              {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-hxa-text-dim mb-1 block">Expires in (hours)</label>
+            <input type="number" min="1" max="8760" value={hours} onChange={e => setHours(e.target.value)} className="w-full px-3 py-2 bg-[#0a1424] border border-hxa-border rounded-lg text-sm focus:outline-none focus:border-hxa-accent" />
+            <p className="text-[10px] text-hxa-text-dim mt-1">Default 24h. 1–8760 hours (max 1 year).</p>
+          </div>
+        </div>
+        {error && <div className="text-xs text-hxa-red mb-3">{error}</div>}
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-hxa-text-dim hover:text-hxa-text">Cancel</button>
+          <button type="submit" disabled={loading} className="px-4 py-2 text-sm bg-hxa-accent hover:bg-hxa-accent/90 disabled:opacity-50 text-white rounded-lg">
+            {loading ? 'Creating…' : 'Create link'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function CreateCodeModal({ onClose, onCreated }: {
   onClose: () => void; onCreated: (code: string) => void;
