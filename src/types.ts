@@ -309,7 +309,8 @@ export type AuditAction =
   | 'lifecycle.cleanup'
   | 'auth.login' | 'auth.login_failed' | 'auth.logout' | 'auth.session_revoked'
   | 'auth.session_force_logout' | 'auth.ticket_revoked'
-  | 'bot.tombstone_cleared';
+  | 'bot.tombstone_cleared'
+  | 'bot.webhook_update';  // fork extension
 
 export interface AuditEntry {
   id: string;

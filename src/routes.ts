@@ -1584,6 +1584,72 @@ export function createRouter(db: HubDB, ws: HubWS, config: HubConfig, sessionSto
   });
 
   /**
+   * PATCH /api/me/webhook — Configure outbound webhook for the current bot (fork extension)
+   *
+   * Body: { webhook_url: string | null, webhook_secret?: string | null }
+   * - webhook_url: HTTPS URL the hub POSTs message/thread events to, or null to clear
+   *   the whole webhook config (url + secret).
+   * - webhook_secret: signing secret (Authorization: Bearer + X-Hub-Signature-256).
+   *   Omit it to keep the existing secret when only changing the URL; pass null to clear it.
+   * Requires 'full' scope: this controls where the hub pushes message content.
+   */
+  auth.patch('/api/me/webhook', requireBot, requireScope('full'), async (req, res) => {
+    const { webhook_url, webhook_secret } = req.body;
+
+    if (webhook_url === undefined) {
+      res.status(400).json({ error: 'webhook_url is required (string URL, or null to clear)', code: 'VALIDATION_ERROR' });
+      return;
+    }
+
+    let nextUrl: string | null = null;
+    let nextSecret: string | null = null;
+
+    if (webhook_url !== null) {
+      if (typeof webhook_url !== 'string' || !webhook_url.trim()) {
+        res.status(400).json({ error: 'webhook_url must be a non-empty string or null', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const url = webhook_url.trim();
+      if (url.length > FIELD_LIMITS.webhook_url) {
+        res.status(400).json({ error: 'webhook_url exceeds ' + FIELD_LIMITS.webhook_url + ' characters', code: 'VALIDATION_ERROR' });
+        return;
+      }
+      const urlError = await validateWebhookUrl(url);
+      if (urlError) {
+        res.status(400).json({ error: urlError, code: 'VALIDATION_ERROR' });
+        return;
+      }
+      nextUrl = url;
+
+      if (webhook_secret === undefined) {
+        // Secret omitted — keep the existing one so URL-only updates don't lose signing config
+        nextSecret = req.bot!.webhook_secret ?? null;
+      } else if (webhook_secret === null) {
+        nextSecret = null;
+      } else if (typeof webhook_secret !== 'string' || webhook_secret.length > 512) {
+        res.status(400).json({ error: 'webhook_secret must be a string of at most 512 characters', code: 'VALIDATION_ERROR' });
+        return;
+      } else {
+        nextSecret = webhook_secret;
+      }
+    }
+
+    const previousUrl = req.bot!.webhook_url ?? null;
+    await db.setBotWebhook(req.bot!.id, nextUrl, nextSecret);
+    if (previousUrl && previousUrl !== nextUrl) {
+      // URL changed — reset the failure circuit breaker so delivery starts fresh
+      await db.resetWebhookDegraded(req.bot!.id);
+    }
+
+    await db.recordAudit(req.bot!.org_id, req.bot!.id, 'bot.webhook_update', 'bot', req.bot!.id, {
+      had_webhook: !!previousUrl,
+      has_webhook: !!nextUrl,
+    });
+
+    res.json({ webhook_url: nextUrl, has_secret: !!nextSecret });
+  });
+
+  /**
    * GET /api/peers — List other bots in my org (from bot perspective)
    */
   auth.get('/api/peers', requireBot, requireScope('read'), async (req, res) => {

@@ -2951,6 +2951,14 @@ export class HubDB {
     `, [botId]);
   }
 
+  /** Fork extension: set or clear a bot's outbound webhook config. */
+  async setBotWebhook(botId: string, webhookUrl: string | null, webhookSecret: string | null): Promise<void> {
+    await this.driver.run(
+      'UPDATE bots SET webhook_url = ?, webhook_secret = ? WHERE id = ?',
+      [webhookUrl, webhookSecret, botId]
+    );
+  }
+
   // ─── Org Settings Operations ────────────────────────────
 
   async getOrgSettings(orgId: string): Promise<OrgSettings> {
